@@ -10,13 +10,6 @@ Incluye:
 - Validacion de consola contra el emulador en COM99.
 - Examples por caso de uso en la carpeta example/.
 
-Flujos estructurados agregados:
-
-- `Tfhka.issueSimpleInvoiceWithNumber()` y `Tfhka.issuePersonalizedInvoiceWithNumber()` devuelven `IssuedFiscalDocumentResult` con el ultimo numero de factura tomado desde `S1`.
-- `Tfhka.issueCreditNoteWithNumber()` devuelve el ultimo numero de nota de credito tomado desde `S1`.
-- `Tfhka.executeZReport()` devuelve `PrintedZReportResult` con `ReportData` luego de ejecutar el Z.
-- `TfhkaFiscalApi` expone atajos equivalentes con `emitirFacturaSimpleConNumero()`, `emitirFacturaPersonalizadaConNumero()`, `emitirNotaCreditoConNumero()` y `ejecutarReporteZEstructurado()`.
-
 Uso rapido:
 
 ```powershell

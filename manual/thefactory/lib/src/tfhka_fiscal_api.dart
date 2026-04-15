@@ -1,7 +1,5 @@
 import 'package:serial_port_win32/serial_port_win32.dart';
 
-import 'command_sequences.dart';
-import 'report_data.dart';
 import 'tfhka.dart';
 
 enum FiscalPaymentKind { cash, dollars, card, mobile, biopago }
@@ -210,58 +208,6 @@ class TfhkaFiscalApi {
   Future<bool> imprimirReporteZ() async => enviarComando('I0Z');
 
   Future<bool> imprimirReporteX() async => enviarComando('I0X');
-
-  Future<int?> emitirFacturaSimpleConNumero() async {
-    final result = await _printer.issueSimpleInvoiceWithNumber();
-    if (result.ok) {
-      ultimoError = 0;
-      return result.number;
-    }
-
-    _syncErrorFromPrinter();
-    return null;
-  }
-
-  Future<int?> emitirFacturaPersonalizadaConNumero(
-    FiscalCustomerData customer,
-  ) async {
-    final result = await _printer.issuePersonalizedInvoiceWithNumber(customer);
-    if (result.ok) {
-      ultimoError = 0;
-      return result.number;
-    }
-
-    _syncErrorFromPrinter();
-    return null;
-  }
-
-  Future<int?> emitirNotaCreditoConNumero(
-    FiscalCustomerData customer, {
-    String comment = 'COMENTARIO NOTA DE CREDITO',
-  }) async {
-    final result = await _printer.issueCreditNoteWithNumber(
-      customer,
-      comment: comment,
-    );
-    if (result.ok) {
-      ultimoError = 0;
-      return result.number;
-    }
-
-    _syncErrorFromPrinter();
-    return null;
-  }
-
-  Future<ReportData?> ejecutarReporteZEstructurado() async {
-    final result = await _printer.executeZReport();
-    if (result.report != null) {
-      ultimoError = 0;
-      return result.report;
-    }
-
-    _syncErrorFromPrinter(fallbackError: 137);
-    return null;
-  }
 
   String obtenerMensajeError() {
     switch (ultimoError) {

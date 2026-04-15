@@ -13,29 +13,6 @@ import 'command_sequences.dart';
 import 'printer_data.dart';
 import 'report_data.dart';
 
-class IssuedFiscalDocumentResult {
-  const IssuedFiscalDocumentResult({
-    required this.ok,
-    this.number,
-    this.printerData,
-  });
-
-  final bool ok;
-  final int? number;
-  final S1PrinterData? printerData;
-
-  bool get hasNumber => number != null && number! > 0;
-}
-
-class PrintedZReportResult {
-  const PrintedZReportResult({required this.rawResponse, required this.report});
-
-  final String? rawResponse;
-  final ReportData? report;
-
-  bool get ok => report != null;
-}
-
 class Tfhka {
   SerialPort? _port;
   bool _opened = false;
@@ -259,19 +236,6 @@ class Tfhka {
     return _statesReport('I0Z', const Duration(seconds: 9));
   }
 
-  Future<PrintedZReportResult> executeZReport() async {
-    final rawResponse = await printZReport();
-    if (rawResponse == null || rawResponse.isEmpty) {
-      return PrintedZReportResult(rawResponse: rawResponse, report: null);
-    }
-
-    final report = await getZReport();
-    return PrintedZReportResult(
-      rawResponse: rawResponse,
-      report: report is ReportData ? report : null,
-    );
-  }
-
   Future<void> sendCmdFile(String path) async {
     final file = File(path);
     final lines = await file.readAsLines();
@@ -307,40 +271,15 @@ class Tfhka {
     return sendCommandsSuccessful(FiscalCommandSequences.simpleInvoice());
   }
 
-  Future<IssuedFiscalDocumentResult> issueSimpleInvoiceWithNumber() async {
-    return _issueDocumentWithNumber(
-      FiscalCommandSequences.simpleInvoice(),
-      (data) => data.lastInvoiceNumber,
-    );
-  }
-
   Future<bool> issuePersonalizedInvoice(FiscalCustomerData customer) async {
     return sendCommandsSuccessful(
       FiscalCommandSequences.personalizedInvoice(customer),
     );
   }
 
-  Future<IssuedFiscalDocumentResult> issuePersonalizedInvoiceWithNumber(
-    FiscalCustomerData customer,
-  ) async {
-    return _issueDocumentWithNumber(
-      FiscalCommandSequences.personalizedInvoice(customer),
-      (data) => data.lastInvoiceNumber,
-    );
-  }
-
   Future<bool> issueCancelledInvoice(FiscalCustomerData customer) async {
     return sendCommandsSuccessful(
       FiscalCommandSequences.cancelledInvoice(customer),
-    );
-  }
-
-  Future<IssuedFiscalDocumentResult> issueCancelledInvoiceWithNumber(
-    FiscalCustomerData customer,
-  ) async {
-    return _issueDocumentWithNumber(
-      FiscalCommandSequences.cancelledInvoice(customer),
-      (data) => data.lastInvoiceNumber,
     );
   }
 
@@ -385,16 +324,6 @@ class Tfhka {
     );
   }
 
-  Future<IssuedFiscalDocumentResult> issueCreditNoteWithNumber(
-    FiscalCustomerData customer, {
-    String comment = 'COMENTARIO NOTA DE CREDITO',
-  }) async {
-    return _issueDocumentWithNumber(
-      FiscalCommandSequences.creditNote(customer, comment),
-      (data) => data.lastNCNumber,
-    );
-  }
-
   Future<bool> issueDebitNote(
     FiscalCustomerData customer, {
     String comment = 'COMENTARIO NOTA DE DEBITO',
@@ -409,24 +338,6 @@ class Tfhka {
       FiscalCommandSequences.reprintInvoices(start, end),
     );
     return _isAck(result);
-  }
-
-  Future<IssuedFiscalDocumentResult> _issueDocumentWithNumber(
-    Iterable<String> commands,
-    int Function(S1PrinterData data) pickNumber,
-  ) async {
-    final ok = await sendCommandsSuccessful(commands);
-    if (!ok) {
-      return const IssuedFiscalDocumentResult(ok: false);
-    }
-
-    final printerData = await getS1PrinterData();
-    final number = pickNumber(printerData);
-    return IssuedFiscalDocumentResult(
-      ok: true,
-      number: number > 0 ? number : null,
-      printerData: printerData,
-    );
   }
 
   bool _isAck(dynamic result) {

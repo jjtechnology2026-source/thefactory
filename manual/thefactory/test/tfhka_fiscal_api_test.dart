@@ -35,40 +35,6 @@ class _FakeCommandTfhka extends Tfhka {
   }
 }
 
-class _FakeDocumentTfhka extends Tfhka {
-  _FakeDocumentTfhka({
-    this.commandsOk = true,
-    S1PrinterData? s1Data,
-    this.zPrintResponse = 'RESPUESTA Z',
-    this.zReport,
-  }) : s1Data = s1Data ?? S1PrinterData();
-
-  final bool commandsOk;
-  final S1PrinterData s1Data;
-  final String? zPrintResponse;
-  final ReportData? zReport;
-
-  @override
-  Future<bool> sendCommandsSuccessful(Iterable<String> commands) async {
-    return commandsOk;
-  }
-
-  @override
-  Future<S1PrinterData> getS1PrinterData() async => s1Data;
-
-  @override
-  Future<String?> printZReport() async => zPrintResponse;
-
-  @override
-  Future<dynamic> getZReport({
-    String? mode,
-    Object? startParam,
-    Object? endParam,
-  }) async {
-    return zReport;
-  }
-}
-
 void main() {
   group('TfhkaFiscalApi', () {
     test('sanitiza acentos y eñes', () {
@@ -151,59 +117,6 @@ void main() {
 
       expect(ok, isFalse);
       expect(api.ultimoError, 89);
-    });
-
-    test(
-      'issueSimpleInvoiceWithNumber devuelve ultimo numero de factura',
-      () async {
-        final s1 = S1PrinterData()..lastInvoiceNumber = 321;
-        final printer = _FakeDocumentTfhka(s1Data: s1);
-
-        final result = await printer.issueSimpleInvoiceWithNumber();
-
-        expect(result.ok, isTrue);
-        expect(result.number, 321);
-        expect(result.printerData, same(s1));
-      },
-    );
-
-    test('issueCreditNoteWithNumber devuelve ultimo numero de nota', () async {
-      final s1 = S1PrinterData()..lastNCNumber = 45;
-      final printer = _FakeDocumentTfhka(s1Data: s1);
-
-      final result = await printer.issueCreditNoteWithNumber(
-        const FiscalCustomerData(),
-      );
-
-      expect(result.ok, isTrue);
-      expect(result.number, 45);
-    });
-
-    test('executeZReport devuelve ReportData estructurado', () async {
-      final report = ReportData()
-        ..numberOfLastZReport = 176
-        ..numberOfLastInvoice = 837;
-      final printer = _FakeDocumentTfhka(zReport: report);
-
-      final result = await printer.executeZReport();
-
-      expect(result.ok, isTrue);
-      expect(result.report, same(report));
-      expect(result.report?.numberOfLastInvoice, 837);
-    });
-
-    test('api expone numero de factura y reporte Z estructurado', () async {
-      final s1 = S1PrinterData()..lastInvoiceNumber = 654;
-      final report = ReportData()..numberOfLastInvoice = 654;
-      final printer = _FakeDocumentTfhka(s1Data: s1, zReport: report);
-      final api = TfhkaFiscalApi(printer: printer);
-
-      final invoiceNumber = await api.emitirFacturaSimpleConNumero();
-      final zReport = await api.ejecutarReporteZEstructurado();
-
-      expect(invoiceNumber, 654);
-      expect(zReport, same(report));
-      expect(api.ultimoError, 0);
     });
   });
 }
