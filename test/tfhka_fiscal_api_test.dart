@@ -47,6 +47,7 @@ class _FakeDocumentTfhka extends Tfhka {
   final S1PrinterData s1Data;
   final String? zPrintResponse;
   final ReportData? zReport;
+  List<String> nonFiscalLines = const <String>[];
 
   @override
   Future<bool> sendCommandsSuccessful(Iterable<String> commands) async {
@@ -55,6 +56,12 @@ class _FakeDocumentTfhka extends Tfhka {
 
   @override
   Future<S1PrinterData> getS1PrinterData() async => s1Data;
+
+  @override
+  Future<bool> issueNonFiscalDocument(List<String> lines) async {
+    nonFiscalLines = lines;
+    return commandsOk;
+  }
 
   @override
   Future<String?> printZReport() async => zPrintResponse;
@@ -204,6 +211,36 @@ void main() {
       expect(invoiceNumber, 654);
       expect(zReport, same(report));
       expect(api.ultimoError, 0);
+    });
+
+    test('api expone documento no fiscal sanitizado', () async {
+      final printer = _FakeDocumentTfhka();
+      final api = TfhkaFiscalApi(printer: printer);
+
+      final ok = await api.emitirDocumentoNoFiscal(const <String>[
+        'Documento no fiscal de prueba',
+        'Línea con acento',
+      ]);
+
+      expect(ok, isTrue);
+      expect(api.ultimoError, 0);
+      expect(printer.nonFiscalLines, <String>[
+        'Documento no fiscal de prueba',
+        'Linea con acento',
+      ]);
+    });
+
+    test('api expone resultado estructurado no fiscal', () async {
+      final printer = _FakeDocumentTfhka();
+      final api = TfhkaFiscalApi(printer: printer);
+
+      final result = await api.imprimirDocumentoNoFiscal(
+        const NonFiscalDocumentRequest(lines: <String>['Linea 1', 'Linea 2']),
+      );
+
+      expect(result.ok, isTrue);
+      expect(result.codigoRetorno, 0);
+      expect(result.processedLines, 2);
     });
   });
 }

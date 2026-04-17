@@ -14,8 +14,9 @@ Flujos estructurados agregados:
 
 - `Tfhka.issueSimpleInvoiceWithNumber()` y `Tfhka.issuePersonalizedInvoiceWithNumber()` devuelven `IssuedFiscalDocumentResult` con el ultimo numero de factura tomado desde `S1`.
 - `Tfhka.issueCreditNoteWithNumber()` devuelve el ultimo numero de nota de credito tomado desde `S1`.
+- `Tfhka.issueNonFiscalDocument()` emite un documento no fiscal usando las secuencias `80`, `81` y `810`.
 - `Tfhka.executeZReport()` devuelve `PrintedZReportResult` con `ReportData` luego de ejecutar el Z.
-- `TfhkaFiscalApi` expone atajos equivalentes con `emitirFacturaSimpleConNumero()`, `emitirFacturaPersonalizadaConNumero()`, `emitirNotaCreditoConNumero()` y `ejecutarReporteZEstructurado()`.
+- `TfhkaFiscalApi` expone atajos equivalentes con `emitirFacturaSimpleConNumero()`, `emitirFacturaPersonalizadaConNumero()`, `emitirNotaCreditoConNumero()`, `emitirDocumentoNoFiscal()`, `imprimirDocumentoNoFiscal()` y `ejecutarReporteZEstructurado()`.
 
 Uso rapido:
 
@@ -53,7 +54,35 @@ dart run example/invoice_example.dart COM99
 dart run example/notes_example.dart COM99 debit
 dart run example/notes_example.dart COM99 credit
 dart run example/notes_example.dart COM99 nonfiscal
+dart run example/non_fiscal_example.dart COM99
 ```
+
+Documento no fiscal desde la API compatible:
+
+```dart
+final api = TfhkaFiscalApi();
+await api.abrirPuerto();
+
+try {
+	final result = await api.imprimirDocumentoNoFiscal(
+	  const NonFiscalDocumentRequest(
+	    lines: <String>[
+		    'Documento no fiscal de prueba',
+		    'Linea 2',
+	    ],
+	  ),
+	);
+
+	print(result.ok);
+	print(result.processedLines);
+} finally {
+	api.cerrarPuerto();
+}
+```
+
+Si necesitas compatibilidad con la firma anterior, `emitirDocumentoNoFiscal(List<String>)` sigue disponible y devuelve `bool`.
+
+La matriz sugerida para validacion real de hardware esta en `MATRIZ_PRUEBAS_DOCUMENTO_NO_FISCAL.md` en la raiz del workspace.
 
 Validado contra el emulador:
 

@@ -6,6 +6,25 @@ import 'tfhka.dart';
 
 enum FiscalPaymentKind { cash, dollars, card, mobile, biopago }
 
+class NonFiscalDocumentRequest {
+  final List<String> lines;
+
+  const NonFiscalDocumentRequest({required this.lines});
+}
+
+class NonFiscalDocumentResult {
+  final int codigoRetorno;
+  final int processedLines;
+
+  const NonFiscalDocumentResult({
+    required this.codigoRetorno,
+    required this.processedLines,
+  });
+
+  int get lineasProcesadas => processedLines;
+  bool get ok => codigoRetorno == 0;
+}
+
 class FiscalPayment {
   final FiscalPaymentKind kind;
   final double amount;
@@ -261,6 +280,41 @@ class TfhkaFiscalApi {
 
     _syncErrorFromPrinter(fallbackError: 137);
     return null;
+  }
+
+  Future<NonFiscalDocumentResult> imprimirDocumentoNoFiscal(
+    NonFiscalDocumentRequest request,
+  ) async {
+    final lineasNormalizadas = request.lines
+        .map((linea) => _truncate(sanitizarTextoFiscal(linea.trim()), 40))
+        .where((linea) => linea.isNotEmpty)
+        .toList(growable: false);
+
+    final ok = await _printer.issueNonFiscalDocument(lineasNormalizadas);
+    if (ok) {
+      ultimoError = 0;
+      return NonFiscalDocumentResult(
+        codigoRetorno: 0,
+        processedLines: lineasNormalizadas.length,
+      );
+    }
+
+    _syncErrorFromPrinter();
+    return NonFiscalDocumentResult(
+      codigoRetorno: ultimoError,
+      processedLines: lineasNormalizadas.length,
+    );
+  }
+
+  Future<NonFiscalDocumentResult> emitirDocumentoNoFiscalEstructurado(
+    NonFiscalDocumentRequest request,
+  ) => imprimirDocumentoNoFiscal(request);
+
+  Future<bool> emitirDocumentoNoFiscal(List<String> lineas) async {
+    final result = await imprimirDocumentoNoFiscal(
+      NonFiscalDocumentRequest(lines: lineas),
+    );
+    return result.ok;
   }
 
   String obtenerMensajeError() {
