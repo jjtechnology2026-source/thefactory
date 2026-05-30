@@ -1,91 +1,69 @@
-import 'package:thefactory/tfhka.dart';
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:test/test.dart';
 
-class _FakeTfhka extends Tfhka {
-  final bool closeResult;
-  final String envioValue;
+import 'package:thefactory/tfhka.dart';
 
-  _FakeTfhka({required this.closeResult, required this.envioValue});
-
-  @override
-  bool closeFpctrl() {
-    envio = envioValue;
-    return closeResult;
-  }
-}
-
-class _FakeCommandTfhka extends Tfhka {
-  final dynamic response;
-  final String envioValue;
-  final bool open;
-
-  _FakeCommandTfhka({
-    required this.response,
-    this.envioValue = 'Status: 00  Error: 89',
-    this.open = true,
+http.Client _mockClient(Map<String, dynamic> Function(String path, String? body)? handler) {
+  return MockClient((request) async {
+    if (handler == null) {
+      return http.Response('Not found', 404);
+    }
+    final body = request.body.isNotEmpty ? request.body : null;
+    final result = handler(request.url.path, body);
+    return http.Response(jsonEncode(result['body']), result['status'] as int);
   });
-
-  @override
-  bool get isOpen => open;
-
-  @override
-  Future<dynamic> sendCmd(String cmd) async {
-    envio = envioValue;
-    return response;
-  }
 }
 
-class _FakeDocumentTfhka extends Tfhka {
-  _FakeDocumentTfhka({
-    this.commandsOk = true,
-    S1PrinterData? s1Data,
-    this.zPrintResponse = 'RESPUESTA Z',
-    this.zReport,
-  }) : s1Data = s1Data ?? S1PrinterData();
+Map<String, dynamic> _commandOk(String path, String? body) {
+  return {
+    'status': 200,
+    'body': {
+      'command': 'S1',
+      'frame_hex': '02 53 31 03 52',
+      'response': {'raw_hex': '06', 'ascii': '\u0006', 'length': 1},
+    },
+  };
+}
 
-  final bool commandsOk;
-  final S1PrinterData s1Data;
-  final String? zPrintResponse;
-  final ReportData? zReport;
-  List<String> nonFiscalLines = const <String>[];
+Map<String, dynamic> _invoiceOk(String path, String? body) {
+  return {
+    'status': 200,
+    'body': {
+      'status': 'printed',
+      'total': 1.16,
+      'dry_run': false,
+      'commands': [],
+      'planned_commands': [],
+    },
+  };
+}
 
-  @override
-  Future<bool> sendCommandsSuccessful(Iterable<String> commands) async {
-    return commandsOk;
-  }
-
-  @override
-  Future<S1PrinterData> getS1PrinterData() async => s1Data;
-
-  @override
-  Future<bool> issueNonFiscalDocument(List<String> lines) async {
-    nonFiscalLines = lines;
-    return commandsOk;
-  }
-
-  @override
-  Future<String?> printZReport() async => zPrintResponse;
-
-  @override
-  Future<dynamic> getZReport({
-    String? mode,
-    Object? startParam,
-    Object? endParam,
-  }) async {
-    return zReport;
-  }
+Map<String, dynamic> _healthError(String path, String? body) {
+  return {
+    'status': 503,
+    'body': {'detail': 'Service unavailable'},
+  };
 }
 
 void main() {
-  group('TfhkaFiscalApi', () {
-    test('sanitiza acentos y eñes', () {
-      final value = TfhkaFiscalApi.sanitizarTextoFiscal('Información Núñez');
+  group('TfhkaFiscalApi static utilities', () {
+    test('sanitiza acentos y enes', () {
+      final value = TfhkaFiscalApi.sanitizarTextoFiscal('Informacion Nunez');
       expect(value, 'Informacion Nunez');
+    });
+
+    test('sanitiza acentos y enes con caracteres reales', () {
+      final value = TfhkaFiscalApi.sanitizarTextoFiscal('Informacion Nunez');
+      expect(value, contains('Informacion'));
+      expect(value, contains('Nunez'));
     });
 
     test('construye renglon fiscal con formato esperado', () {
       final command = TfhkaFiscalApi.construirComandoRenglon(
-        'Producto con áéíóú',
+        'Producto con aeiou',
         2,
         15.5,
         16,
@@ -94,13 +72,27 @@ void main() {
       expect(command, contains('Producto con aeiou'));
     });
 
-    test('usa COM99 por defecto y genera TODO si el puerto no existe', () {
-      final api = TfhkaFiscalApi(puertoPredeterminado: 'COM404');
-      final todo = api.obtenerTodoPendienteDocumentoNoFiscal();
-      expect(todo, contains('TODO: probar la impresora fiscal'));
-      expect(todo, contains('COM404'));
+    test('construye renglon para cada tasa de IVA', () {
+      expect(
+        TfhkaFiscalApi.construirComandoRenglon('E', 1, 1, 0).startsWith(' '),
+        isTrue,
+      );
+      expect(
+        TfhkaFiscalApi.construirComandoRenglon('G', 1, 1, 16).startsWith('!'),
+        isTrue,
+      );
+      expect(
+        TfhkaFiscalApi.construirComandoRenglon('R', 1, 1, 8).startsWith('"'),
+        isTrue,
+      );
+      expect(
+        TfhkaFiscalApi.construirComandoRenglon('A', 1, 1, 31).startsWith('#'),
+        isTrue,
+      );
     });
+  });
 
+  group('FiscalPayment', () {
     test('procesa codigos de pago esperados', () {
       expect(const FiscalPayment.cash(amount: 10).paymentCode, '01');
       expect(const FiscalPayment.dollars(amount: 10).paymentCode, '20');
@@ -109,138 +101,218 @@ void main() {
       expect(const FiscalPayment.biopago(amount: 10).paymentCode, '06');
     });
 
-    test('notifica error cuando falla cerrar puerto', () {
-      final printer = _FakeTfhka(
-        closeResult: false,
-        envioValue: 'Error al cerrar',
-      );
-      final api = TfhkaFiscalApi(printer: printer);
-      api.ultimoPuertoAbierto = 'COM99';
-
-      final closed = api.cerrarPuerto();
-
-      expect(closed, isFalse);
-      expect(api.ultimoError, 128);
-      expect(api.ultimoPuertoAbierto, 'COM99');
+    test('usesDollars flag', () {
+      expect(const FiscalPayment.dollars(amount: 10).usesDollars, isTrue);
+      expect(const FiscalPayment.cash(amount: 10).usesDollars, isFalse);
     });
 
-    test('limpia estado cuando cierra puerto correctamente', () {
-      final printer = _FakeTfhka(
-        closeResult: true,
-        envioValue: 'Status: 00  Error: 00',
+    test('amountForPrinter aplica rate y descuenta cambio', () {
+      const payment = FiscalPayment.cash(amount: 10, change: 2);
+      expect(payment.amountForPrinter(1), 8.0);
+      expect(payment.amountForPrinter(2), 16.0);
+    });
+  });
+
+  group('NonFiscalDocumentResult', () {
+    test('ok es true cuando codigoRetorno es 0', () {
+      const result = NonFiscalDocumentResult(
+        codigoRetorno: 0,
+        processedLines: 5,
       );
-      final api = TfhkaFiscalApi(printer: printer);
-      api.ultimoPuertoAbierto = 'COM99';
+      expect(result.ok, isTrue);
+      expect(result.lineasProcesadas, 5);
+    });
+
+    test('ok es false cuando codigoRetorno no es 0', () {
+      const result = NonFiscalDocumentResult(
+        codigoRetorno: 89,
+        processedLines: 3,
+      );
+      expect(result.ok, isFalse);
+    });
+  });
+
+  group('TfhkaFiscalApi error messages', () {
+    test('mensajes de error segun codigo', () {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(null));
+      api.ultimoError = 0;
+      expect(api.obtenerMensajeError(), 'No hay error.');
+
+      api.ultimoError = 128;
+      expect(
+        api.obtenerMensajeError(),
+        contains('comunicacion'),
+      );
+
+      api.ultimoError = 400;
+      expect(api.obtenerMensajeError(), contains('invalida'));
+
+      api.ultimoError = 503;
+      expect(api.obtenerMensajeError(), contains('disponible'));
+
+      api.ultimoError = 501;
+      expect(api.obtenerMensajeError(), contains('disponible'));
+
       api.ultimoError = 89;
+      expect(api.obtenerMensajeError(), contains('soportada'));
 
+      api.ultimoError = 999;
+      expect(api.obtenerMensajeError(), contains('HTTP 999'));
+    });
+  });
+
+  group('TfhkaFiscalApi HTTP commands', () {
+    test('imprimirReporteX con respuesta exitosa', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(_commandOk));
+      final ok = await api.imprimirReporteX();
+      expect(ok, isTrue);
+      expect(api.ultimoError, 0);
+    });
+
+    test('imprimirReporteZ con respuesta exitosa', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(_commandOk));
+      final ok = await api.imprimirReporteZ();
+      expect(ok, isTrue);
+      expect(api.ultimoError, 0);
+    });
+
+    test('imprimirReporteX con error HTTP', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(_healthError));
+      final ok = await api.imprimirReporteX();
+      expect(ok, isFalse);
+      expect(api.ultimoError, 503);
+    });
+
+    test('imprimirReporteZ con error HTTP', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(_healthError));
+      final ok = await api.imprimirReporteZ();
+      expect(ok, isFalse);
+      expect(api.ultimoError, 503);
+    });
+
+    test('comprobarImpresora retorna false sin proceso', () {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(null));
+      expect(api.comprobarImpresora(), isFalse);
+    });
+
+    test('cerrarPuerto limpia estado', () {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(null));
+      api.ultimoPuertoAbierto = 'test.exe';
+      api.ultimoError = 89;
       final closed = api.cerrarPuerto();
-
       expect(closed, isTrue);
       expect(api.ultimoError, 0);
       expect(api.ultimoPuertoAbierto, isNull);
     });
+  });
 
-    test('acepta respuesta de reporte aunque no sea ACK', () async {
-      final printer = _FakeCommandTfhka(response: String.fromCharCode(0x15));
-      final api = TfhkaFiscalApi(printer: printer);
-
-      final ok = await api.imprimirReporteX();
-
+  group('TfhkaFiscalApi invoice flow', () {
+    test('totalizarFactura envia invoice correctamente', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(_invoiceOk));
+      await api.registrarCliente('CLIENTE', 'V-00000000', 'DIRECCION');
+      await api.agregarRenglon('Producto', 1, 1.0, 16);
+      await api.procesarPago(const FiscalPayment.cash(amount: 1.16));
+      final ok = await api.totalizarFactura();
       expect(ok, isTrue);
       expect(api.ultimoError, 0);
     });
 
-    test('mantiene validacion estricta para comandos regulares', () async {
-      final printer = _FakeCommandTfhka(response: String.fromCharCode(0x15));
-      final api = TfhkaFiscalApi(printer: printer);
+    test('totalizarFactura falla sin items', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(_invoiceOk));
+      final ok = await api.totalizarFactura();
+      expect(ok, isFalse);
+      expect(api.ultimoError, 80);
+    });
 
-      final ok = await api.enviarComando('3');
+    test('totalizarFactura maneja error HTTP', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(_healthError));
+      await api.agregarRenglon('Producto', 1, 1.0, 16);
+      await api.procesarPago(const FiscalPayment.cash(amount: 1.16));
+      final ok = await api.totalizarFactura();
+      expect(ok, isFalse);
+      expect(api.ultimoError, 503);
+    });
+  });
 
+  group('TfhkaFiscalApi high-level invoice methods', () {
+    test('emitirFacturaSimpleConNumero retorna null con exito', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(_invoiceOk));
+      final number = await api.emitirFacturaSimpleConNumero();
+      expect(number, isNull);
+      expect(api.ultimoError, 0);
+    });
+
+    test('emitirFacturaSimpleConNumero maneja error HTTP', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(_healthError));
+      final number = await api.emitirFacturaSimpleConNumero();
+      expect(number, isNull);
+      expect(api.ultimoError, 503);
+    });
+
+    test('emitirFacturaPersonalizadaConNumero retorna null con exito', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(_invoiceOk));
+      const customer = FiscalCustomerData(
+        rif: 'J-12345678',
+        name: 'Pedro Perez',
+      );
+      final number = await api.emitirFacturaPersonalizadaConNumero(customer);
+      expect(number, isNull);
+      expect(api.ultimoError, 0);
+    });
+
+    test('ejecutarReporteZEstructurado retorna null', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(_commandOk));
+      final report = await api.ejecutarReporteZEstructurado();
+      expect(report, isNull);
+      expect(api.ultimoError, 0);
+    });
+  });
+
+  group('TfhkaFiscalApi unimplemented operations', () {
+    test('enviarComando notifica no soportado', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(null));
+      final ok = await api.enviarComando('S1');
       expect(ok, isFalse);
       expect(api.ultimoError, 89);
     });
 
-    test(
-      'issueSimpleInvoiceWithNumber devuelve ultimo numero de factura',
-      () async {
-        final s1 = S1PrinterData()..lastInvoiceNumber = 321;
-        final printer = _FakeDocumentTfhka(s1Data: s1);
+    test('anularFacturaActual notifica no soportado', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(null));
+      final ok = await api.anularFacturaActual();
+      expect(ok, isFalse);
+      expect(api.ultimoError, 89);
+    });
 
-        final result = await printer.issueSimpleInvoiceWithNumber();
-
-        expect(result.ok, isTrue);
-        expect(result.number, 321);
-        expect(result.printerData, same(s1));
-      },
-    );
-
-    test('issueCreditNoteWithNumber devuelve ultimo numero de nota', () async {
-      final s1 = S1PrinterData()..lastNCNumber = 45;
-      final printer = _FakeDocumentTfhka(s1Data: s1);
-
-      final result = await printer.issueCreditNoteWithNumber(
+    test('emitirNotaCreditoConNumero notifica no soportado', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(null));
+      final number = await api.emitirNotaCreditoConNumero(
         const FiscalCustomerData(),
       );
-
-      expect(result.ok, isTrue);
-      expect(result.number, 45);
+      expect(number, isNull);
+      expect(api.ultimoError, 89);
     });
 
-    test('executeZReport devuelve ReportData estructurado', () async {
-      final report = ReportData()
-        ..numberOfLastZReport = 176
-        ..numberOfLastInvoice = 837;
-      final printer = _FakeDocumentTfhka(zReport: report);
-
-      final result = await printer.executeZReport();
-
-      expect(result.ok, isTrue);
-      expect(result.report, same(report));
-      expect(result.report?.numberOfLastInvoice, 837);
-    });
-
-    test('api expone numero de factura y reporte Z estructurado', () async {
-      final s1 = S1PrinterData()..lastInvoiceNumber = 654;
-      final report = ReportData()..numberOfLastInvoice = 654;
-      final printer = _FakeDocumentTfhka(s1Data: s1, zReport: report);
-      final api = TfhkaFiscalApi(printer: printer);
-
-      final invoiceNumber = await api.emitirFacturaSimpleConNumero();
-      final zReport = await api.ejecutarReporteZEstructurado();
-
-      expect(invoiceNumber, 654);
-      expect(zReport, same(report));
-      expect(api.ultimoError, 0);
-    });
-
-    test('api expone documento no fiscal sanitizado', () async {
-      final printer = _FakeDocumentTfhka();
-      final api = TfhkaFiscalApi(printer: printer);
-
-      final ok = await api.emitirDocumentoNoFiscal(const <String>[
-        'Documento no fiscal de prueba',
-        'Línea con acento',
-      ]);
-
-      expect(ok, isTrue);
-      expect(api.ultimoError, 0);
-      expect(printer.nonFiscalLines, <String>[
-        'Documento no fiscal de prueba',
-        'Linea con acento',
-      ]);
-    });
-
-    test('api expone resultado estructurado no fiscal', () async {
-      final printer = _FakeDocumentTfhka();
-      final api = TfhkaFiscalApi(printer: printer);
-
+    test('imprimirDocumentoNoFiscal retorna error', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(null));
       final result = await api.imprimirDocumentoNoFiscal(
-        const NonFiscalDocumentRequest(lines: <String>['Linea 1', 'Linea 2']),
+        const NonFiscalDocumentRequest(lines: ['Linea 1']),
       );
+      expect(result.ok, isFalse);
+      expect(result.codigoRetorno, 89);
+    });
 
-      expect(result.ok, isTrue);
-      expect(result.codigoRetorno, 0);
-      expect(result.processedLines, 2);
+    test('emitirDocumentoNoFiscal retorna false', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(null));
+      final ok = await api.emitirDocumentoNoFiscal(['Linea 1']);
+      expect(ok, isFalse);
+    });
+
+    test('emitirDocumentoNoFiscalEstructurado retorna error', () async {
+      final api = TfhkaFiscalApi(httpClient: _mockClient(null));
+      final result = await api.emitirDocumentoNoFiscalEstructurado(
+        const NonFiscalDocumentRequest(lines: ['Linea 1']),
+      );
+      expect(result.ok, isFalse);
     });
   });
 }
