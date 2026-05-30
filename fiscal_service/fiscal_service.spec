@@ -1,8 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 a = Analysis(
-    ['fiscal_service/run.py'],
-    pathex=[],
+    [os.path.join(SPECPATH, 'run.py')],  # <-- Ruta absoluta dinámica
+    pathex=[SPECPATH],
     binaries=[],
     datas=[],
     hiddenimports=[
