@@ -454,7 +454,12 @@ class Tfhka {
       await _purge();
       if (await _handleCtsRts()) {
         await _write(_assembleQueryToSend(cmd));
-        return true;
+        final response = await _read(1, timeout: const Duration(seconds: 2));
+        if (response == String.fromCharCode(0x06)) {
+          return true;
+        }
+        _clearRts();
+        return false;
       }
       _getStatusError(0, 128);
       envio = 'Error... CTS in False';
@@ -486,8 +491,17 @@ class Tfhka {
   Future<String?> _fetchRowReport(Duration wait) async {
     await Future<void>.delayed(wait);
     final available = _bytesInQueue();
-    if (available > 0) {
-      return _read(available, timeout: const Duration(seconds: 2));
+    if (available > 1) {
+      final message = await _read(
+        available,
+        timeout: const Duration(seconds: 2),
+      );
+      final line = message.substring(1, message.length - 1);
+      final lrc = _lrc(line);
+      if (lrc == message.codeUnitAt(message.length - 1)) {
+        await _purge();
+        return message;
+      }
     }
     return null;
   }
@@ -498,8 +512,7 @@ class Tfhka {
       if (await _handleCtsRts()) {
         await _write(_assembleQueryToSend(cmd));
         var response = await _read(1, timeout: const Duration(seconds: 2));
-        while (response == String.fromCharCode(0x05)) {
-          response = await _read(1, timeout: const Duration(seconds: 2));
+        while (response == String.fromCharCode(0x06)) {
           await Future<void>.delayed(const Duration(milliseconds: 50));
           await _write(Uint8List.fromList([0x06]));
           await Future<void>.delayed(const Duration(milliseconds: 50));

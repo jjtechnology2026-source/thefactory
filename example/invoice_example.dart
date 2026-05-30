@@ -83,12 +83,11 @@ Future<bool> _openPrinterAuto(Tfhka printer, String preferredPort) async {
         continue;
       }
 
-      final probe = await printer.sendCmd('7');
-      final accepted = probe is bool
-          ? probe
-          : (probe is String && probe == String.fromCharCode(0x06));
+      final statusString = await printer.readFpStatus();
+      final accepted = statusString.isNotEmpty;
       if (accepted) {
         stdout.writeln('Conectado en $port con ${cfg.name}.');
+        stdout.writeln('Estado: $statusString');
         return true;
       }
 

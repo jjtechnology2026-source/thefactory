@@ -79,7 +79,7 @@ class FiscalCommandSequences {
         0 when lines.length == 1 => '810',
         0 => '80',
         _ when index == lines.length - 1 => '810',
-        _ => '81',
+        _ => '80',
       };
       commands.add('$prefix${lines[index]}');
     }

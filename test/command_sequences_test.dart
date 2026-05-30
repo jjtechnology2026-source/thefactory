@@ -61,7 +61,7 @@ void main() {
         'Fin del Documento no Fiscal',
       ]);
       expect(commands.first, '80\$Documento de Prueba');
-      expect(commands[1], '81Esto es un documento de texto');
+      expect(commands[1], '80Esto es un documento de texto');
       expect(commands.last, '810Fin del Documento no Fiscal');
     });
 
